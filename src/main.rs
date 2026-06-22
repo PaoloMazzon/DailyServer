@@ -5,6 +5,7 @@ use std::path::Path;
 use clap::Parser;
 mod endpoints;
 mod util;
+mod state;
 use crate::endpoints::api;
 use crate::util::config::{ServerConfig, CliConfig};
 
