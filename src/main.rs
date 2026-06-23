@@ -9,7 +9,7 @@ mod state;
 use crate::endpoints::api;
 use crate::util::config::{ServerConfig, CliConfig};
 
-fn setup_logging(config: &ServerConfig) -> Result<(), String> {
+fn setup_logging(config: &ServerConfig) -> anyhow::Result<()> {
     let log_path = config.log_filename.as_str();
     let max_files = 30;
     let policy = RotationPolicy::Daily { hour: 0, minute: 0 };
@@ -19,19 +19,19 @@ fn setup_logging(config: &ServerConfig) -> Result<(), String> {
         .rotation_policy(policy)
         .max_files(max_files)
         .rotate_on_open(false)
-        .build_arc().map_err(|e| format!("Failed to create rotating file sink: {}", e))?;
+        .build_arc()?;
 
     let stdout_sink = StdStreamSink::builder()
         .stdout()
         .via_print_macro() 
-        .build_arc().map_err(|e| format!("Failed to create stdout sink: {}", e))?;
+        .build_arc()?;
 
     let logger = Logger::builder()
         .name("server_logger")
         .sink(rotating_sink)
         .sink(stdout_sink)
         .flush_level_filter(LevelFilter::All)
-        .build().map_err(|e| format!("Failed to create logger: {}", e))?;
+        .build()?;
 
     // 5. Register it globally
     spdlog::set_default_logger(Arc::new(logger));
@@ -40,7 +40,7 @@ fn setup_logging(config: &ServerConfig) -> Result<(), String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), String> {
+async fn main() -> anyhow::Result<()> {
     // Load configs and setup logging
     let args = CliConfig::parse();
     let config = ServerConfig::load(Path::new(&args.config_file));
@@ -53,7 +53,7 @@ async fn main() -> Result<(), String> {
 
     // Start server
     let ip = format!("0.0.0.0:{}", config.port);
-    let listener = tokio::net::TcpListener::bind(&ip).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&ip).await?;
     info!("Server started successfully at {}", ip);
     axum::serve(listener, app).await.unwrap();
     Ok(())
