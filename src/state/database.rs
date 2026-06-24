@@ -5,22 +5,33 @@ use rusqlite::{params, Connection, Result};
 use tokio::task::JoinHandle;
 use tokio::time;
 use std::path::Path;
-use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
+use std::sync::{Arc, atomic::AtomicBool, atomic::AtomicU64, atomic::Ordering};
 use std::time::Duration;
 use anyhow::anyhow;
 
 /// Row in the database
 pub struct DatabaseRow {
+    pub id: u64,
     pub name: String,
-    pub score: i32,
+    pub score: u64,
 }
 
 impl DatabaseRow {
-    /// Creates an empty row for testing purposes
+    /// Creates an empty database row for testing purposes
     pub fn empty() -> Self {
         DatabaseRow { 
-            name: String::new(), 
-            score: 0
+            id: 0, 
+            name: String::new(),
+            score: 0,
+        }
+    }
+
+    /// Creates a new database row with an assigned ID
+    pub fn new(accessor: &mut DatabaseAccessor) -> Self {
+        DatabaseRow { 
+            id: accessor.get_id(),
+            name: String::new(),
+            score: 0,
         }
     }
 }
@@ -44,6 +55,9 @@ pub struct DatabaseAccessor {
     
     /// Provided to the database thread to send the result back
     read_sender: mpsc::Sender<Vec<DatabaseRow>>,
+
+    /// Global index counter copy copy from the database
+    index_counter: Arc<AtomicU64>,
 }
 
 /// Thread-safe database that can only be written to via a ringbuffer
@@ -51,10 +65,17 @@ pub struct Database {
     /// Provided to accessors to send writes to the DB
     write_sender: mpsc::Sender<DatabaseRow>,
 
-    /// 
+    /// Copied for database accessors
     read_request_sender: mpsc::Sender<DatabaseReadRequest>,
+
+    /// Signals the database thread to die
     kill_thread: Arc<AtomicBool>,
+
+    /// Join handle for the database thread (used in the drop function)
     writer_thread: JoinHandle<()>,
+
+    /// Global index counter
+    index_counter: Arc<AtomicU64>,
 }
 
 impl Database {
@@ -101,6 +122,7 @@ impl Database {
             kill_thread,
             read_request_sender,
             writer_thread: join_handle,
+            index_counter: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -110,7 +132,8 @@ impl Database {
             write_request: self.write_sender.clone(),
             read_requester: self.read_request_sender.clone(),
             read_receiver,
-            read_sender
+            read_sender,
+            index_counter: self.index_counter.clone(),
         }
     }
 }
@@ -158,6 +181,11 @@ impl DatabaseAccessor {
             Err(_) => Err(anyhow!("Timed out"))
         }
     }
+
+    /// Gets a new ID for use in a database row
+    pub fn get_id(&mut self) -> u64 {
+        self.index_counter.fetch_add(1, Ordering::Relaxed)
+    }
 }
 
 #[cfg(test)]
@@ -179,5 +207,7 @@ mod tests {
         let mut accessor = db.get_accessor().await;
         accessor.read(String::new(), Duration::from_secs(1)).await.unwrap();
         accessor.write(DatabaseRow::empty()).await.unwrap();
+        let row = DatabaseRow::new(&mut accessor);
+        accessor.write(row).await.unwrap();
     }
 }
