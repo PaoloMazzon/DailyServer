@@ -10,6 +10,13 @@ use std::time::Duration;
 use anyhow::anyhow;
 use crate::util::graceful_shutdown::{kill_program, kill_signal_received};
 
+static TABLE_CREATION_SQL: &str = "
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    score INTEGER
+);";
+
 /// Row in the database
 pub struct DatabaseRow {
     pub id: u64,
@@ -114,8 +121,8 @@ impl Database {
         let spawned_thread_kill_switch = kill_thread.clone();
 
         let join_handle = tokio::spawn(async move {
-            if let Err(e) = connection.execute("CREATE TABLE dailies", []) {
-                error!("Failed to create dailies table.");
+            if let Err(e) = connection.execute(TABLE_CREATION_SQL, []) {
+                error!("Failed to create dailies table, {}", e);
                 kill_program();
                 panic!();
             }
@@ -209,7 +216,7 @@ mod tests {
     use super::*;
 
     async fn get_database() -> Database {
-        Database::open("filename").await.unwrap()
+        Database::open(":memory:").await.unwrap()
     }
 
     #[tokio::test(flavor = "multi_thread")]
