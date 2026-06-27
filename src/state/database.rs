@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, atomic::AtomicBool, atomic::AtomicU64, atomic::Ordering};
 use std::time::Duration;
 use anyhow::anyhow;
+use crate::util::graceful_shutdown::{kill_program, kill_signal_received};
 
 /// Row in the database
 pub struct DatabaseRow {
@@ -80,13 +81,27 @@ pub struct Database {
 
 impl Database {
     fn handle_row_write(database: &mut Connection, row: DatabaseRow) {
-        // TODO: This
+        /*if let Err(e) = database.execute("INSERT INTO row (name, score)", row) {
+            error!("Failed to write row {:?} to database, {}", row, e);
+        }*/
     }
 
     fn handle_row_read(database: &mut Connection, read: DatabaseReadRequest) {
         // TODO: This
         if let Err(e) = read.return_to.try_send(Vec::new()) {
             error!("Failed to send read request back to sender for query '{}'", read.query);
+        }
+    }
+
+    fn handle_row_writes(connection: &mut Connection, write_receiver: &mut mpsc::Receiver<DatabaseRow>) {
+        while let Ok(row) = write_receiver.try_recv() {
+            Database::handle_row_write(connection, row);
+        }
+    }
+
+    fn handle_row_reads(connection: &mut Connection, read_request_receiver: &mut mpsc::Receiver<DatabaseReadRequest>) {
+        while let Ok(read) = read_request_receiver.try_recv() {
+            Database::handle_row_read(connection, read);
         }
     }
 
@@ -99,18 +114,19 @@ impl Database {
         let spawned_thread_kill_switch = kill_thread.clone();
 
         let join_handle = tokio::spawn(async move {
+            if let Err(e) = connection.execute("CREATE TABLE dailies", []) {
+                error!("Failed to create dailies table.");
+                kill_program();
+                panic!();
+            }
+
             loop {
-                // TODO: Dump everything to file before kill thread signal received
-                if let Ok(row) = write_receiver.try_recv() {
-                    Database::handle_row_write(&mut connection, row);
-                }
+                Self::handle_row_writes(&mut connection, &mut write_receiver);
+                Self::handle_row_reads(&mut connection, &mut read_request_receiver);
 
-                // TODO: Handle all read requests before quitting
-                if let Ok(read) = read_request_receiver.try_recv() {
-                    Database::handle_row_read(&mut connection, read);
-                }
-
-                if spawned_thread_kill_switch.load(Ordering::Relaxed) {
+                if spawned_thread_kill_switch.load(Ordering::Relaxed) || kill_signal_received() {
+                    Self::handle_row_writes(&mut connection, &mut write_receiver);
+                    Self::handle_row_reads(&mut connection, &mut read_request_receiver);
                     info!("Database writer thread received kill signal.");
                     break;
                 }
