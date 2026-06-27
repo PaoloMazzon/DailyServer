@@ -13,6 +13,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 spdlog-rs = "0.5.3"
 clap = { version = "4.6.1", features = ["derive"] }
 anyhow = "1.0.102"
+gitignore = "1.0.8"
 
 [package.metadata.deb]
 maintainer = "Paolo Mazzon <pdmazzon@gmail.com>"
