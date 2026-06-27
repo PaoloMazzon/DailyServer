@@ -1,6 +1,7 @@
 [package]
 name = "daily_server"
 version = "0.1.0"
+description = "Daily server"
 edition = "2024"
 
 [dependencies]
@@ -12,3 +13,19 @@ serde = { version = "1.0.219", features = ["derive"] }
 spdlog-rs = "0.5.3"
 clap = { version = "4.6.1", features = ["derive"] }
 anyhow = "1.0.102"
+
+[package.metadata.deb]
+maintainer = "Paolo Mazzon <pdmazzon@gmail.com>"
+copyright = "2026, Paolo Mazzon <pdmazzon@gmail.com>"
+license-file = ["LICENSE", "4"]
+extended-description = "Daily server"
+depends = "$auto"
+section = "utility"
+priority = "optional"
+maintainer-scripts = "packaging/"
+systemd-units = [ { unit-name = "daily_server", enable = true } ]
+assets = [
+    ["target/release/daily_server", "usr/bin/", "755"],
+    ["server/*", "opt/daily_server/", "644"],
+    ["server/html/*", "opt/daily_server/html", "644"],
+]

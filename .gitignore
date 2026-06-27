@@ -2,3 +2,4 @@ store.db
 logs/
 target/
 filename
+*.deb

@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/daily_server
+ExecStart=/opt/myapp/bin/start-app.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
