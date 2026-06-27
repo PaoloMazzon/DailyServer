@@ -5,6 +5,10 @@ use spdlog::prelude::*;
 static GLOBAL_KILL_SIGNAL: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false));
 static KILL_SIGNAL_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Kills the program "safely" by setting the global "kill" signal to true
+/// (it's up to each thread to watch out for the kill signal and handle it
+/// accordingly). This function also spawns a "kill thread" that will nuke
+/// the entire program in 5 seconds.
 pub fn kill_program() {
     GLOBAL_KILL_SIGNAL.store(true, Relaxed);
     spawn(async {
@@ -15,6 +19,9 @@ pub fn kill_program() {
     });
 }
 
+/// Returns true if any thread anywhere has requested the program be terminated.
+/// The program will be forcibly aborted within 5 seconds of the kill signal
+/// being received so any cleanup should be prioritized after this is true.
 pub fn kill_signal_received() -> bool {
     GLOBAL_KILL_SIGNAL.load(Relaxed)
 }

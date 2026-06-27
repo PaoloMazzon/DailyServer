@@ -6,7 +6,7 @@ use clap::Parser;
 mod endpoints;
 mod util;
 mod state;
-use crate::endpoints::api;
+use crate::endpoints::{api, general_get};
 use crate::util::config::{ServerConfig, CliConfig};
 
 fn setup_logging(config: &ServerConfig) -> anyhow::Result<()> {
@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Bind endpoints
     let app = Router::new()
-        .route("/api", get(api::api_endpoint_get))
+        .route("/{*wildcard}", get(general_get::endpoint_get))
         .route("/api", post(api::api_endpoint_post));
 
     // Start server
