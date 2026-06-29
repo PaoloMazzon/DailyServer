@@ -32,12 +32,19 @@ pub fn kill_signal_received() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::graceful_shutdown::{kill_program, kill_signal_received};
+    use std::thread::sleep;
+    use super::*;
 
     #[tokio::test]
     async fn test_kill_signal() {
         assert_eq!(kill_signal_received(), false);
         kill_program();
         assert_eq!(kill_signal_received(), true);
+    }
+
+    #[test]
+    #[should_panic]
+    fn instant_kill_instant_kills() {
+        instant_kill_program();
     }
 }

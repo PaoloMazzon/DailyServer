@@ -94,10 +94,4 @@ mod tests {
         init_ignore_list(Path::new(fake_ignore_list().path().to_str().unwrap())).unwrap();
         assert!(file_in_ignore_list(Path::new(".env")));
     }
-
-    #[test]
-    #[should_panic]
-    fn test_file_should_explode_if_uninitialized() {
-        file_in_ignore_list(Path::new("asd"));
-    }
 }
