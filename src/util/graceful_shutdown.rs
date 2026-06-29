@@ -32,7 +32,6 @@ pub fn kill_signal_received() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::thread::sleep;
     use super::*;
 
     #[tokio::test]
