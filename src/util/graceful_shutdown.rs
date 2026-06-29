@@ -1,4 +1,4 @@
-use std::{process::abort, sync::{LazyLock, atomic::{AtomicBool, Ordering::Relaxed}}, time::Duration};
+use std::{sync::{LazyLock, atomic::{AtomicBool, Ordering::Relaxed}}, time::Duration};
 use tokio::task::spawn;
 use spdlog::prelude::*;
 
@@ -14,9 +14,13 @@ pub fn kill_program() {
     spawn(async {
         info!("Received kill signal, spawned thread to kill process in {} seconds.", KILL_SIGNAL_TIMEOUT.as_secs());
         tokio::time::sleep(KILL_SIGNAL_TIMEOUT).await;
-        error!("Kill timeout exceeded. Killing program.");
-        abort();
+        panic!("Kill timeout exceeded. Killing program.");
     });
+}
+
+/// Program cannot safely continue so it must explode, also logs
+pub fn instant_kill_program() -> ! {
+    panic!("[FATAL] Instantly killing program");
 }
 
 /// Returns true if any thread anywhere has requested the program be terminated.

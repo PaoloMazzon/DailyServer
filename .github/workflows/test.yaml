@@ -1,4 +1,4 @@
-name: test
+name: Test and package
 
 on: [push]
 
@@ -10,7 +10,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
-      - run: cargo test
+      - name: Test & Coverage
+        run: |
+              cargo install cargo-llvm-cov
+              cargo llvm-cov
       - name: Package .deb file
         run: |
               cargo install cargo-deb

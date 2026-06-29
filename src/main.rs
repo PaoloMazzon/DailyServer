@@ -7,7 +7,7 @@ mod endpoints;
 mod util;
 mod state;
 use crate::endpoints::{api, general_get};
-use crate::util::config::{ServerConfig, CliConfig};
+use crate::util::config::{ServerConfig, CliConfig, init_ignore_list};
 
 fn setup_logging(config: &ServerConfig) -> anyhow::Result<()> {
     let log_path = config.log_filename.as_str();
@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let args = CliConfig::parse();
     let config = ServerConfig::load(Path::new(&args.config_file));
     setup_logging(&config)?;
+    init_ignore_list(Path::new(config.ignore_filename.as_str()))?;
 
     // Bind endpoints
     let app = Router::new()

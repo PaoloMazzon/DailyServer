@@ -1,0 +1,5 @@
+{
+  "port": 3000,
+  "log_filename": "logs/server.log",
+  "ignore_filename": ".ignore"
+}
