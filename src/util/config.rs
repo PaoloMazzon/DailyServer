@@ -5,8 +5,8 @@ use clap::Parser;
 use std::sync::{OnceLock};
 use anyhow::anyhow;
 use spdlog::prelude::*;
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use crate::util::graceful_shutdown::{instant_kill_program, kill_program, kill_signal_received};
+use ignore::gitignore::{Gitignore};
+use crate::util::graceful_shutdown::instant_kill_program;
 
 /// Global ignore list for get requests
 static IGNORE_LIST: OnceLock<Gitignore> = OnceLock::new();
@@ -95,6 +95,7 @@ mod tests {
         assert!(file_in_ignore_list(Path::new(".env")));
     }
 
+    #[test]
     #[should_panic]
     fn test_file_should_explode_if_uninitialized() {
         file_in_ignore_list(Path::new("asd"));
