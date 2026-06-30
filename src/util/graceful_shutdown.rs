@@ -19,6 +19,7 @@ pub fn kill_program() {
 }
 
 /// Program cannot safely continue so it must explode, also logs
+#[allow(dead_code)]
 pub fn instant_kill_program() -> ! {
     panic!("[FATAL] Instantly killing program");
 }

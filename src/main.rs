@@ -13,6 +13,10 @@ fn setup_logging(config: &ServerConfig) -> anyhow::Result<()> {
     let log_path = config.log_filename.as_str();
     let max_files = 30;
     let policy = RotationPolicy::Daily { hour: 0, minute: 0 };
+    let filter_policy = match cfg!(debug_assertions) {
+        true => LevelFilter::MoreSevereEqual(Level::Debug),
+        false => LevelFilter::MoreSevereEqual(Level::Info)
+    };
 
     let rotating_sink = RotatingFileSink::builder()
         .base_path(log_path)
@@ -30,6 +34,7 @@ fn setup_logging(config: &ServerConfig) -> anyhow::Result<()> {
         .name("server_logger")
         .sink(rotating_sink)
         .sink(stdout_sink)
+        .level_filter(filter_policy)
         .flush_level_filter(LevelFilter::All)
         .build()?;
 
@@ -50,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
     // Bind endpoints
     let app = Router::new()
         .route("/{*wildcard}", get(general_get::endpoint_get))
+        .route("/", get(general_get::endpoint_get))
         .route("/api", post(api::api_endpoint_post));
 
     // Start server
