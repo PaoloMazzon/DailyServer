@@ -13,7 +13,7 @@ panic = "abort"
 [dependencies]
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 tokio = { version = "1", features = ["full"] }
-axum = "0.8.4"
+axum = { version = "0.8.4", features = ["macros"] }
 serde_json = "1.0.143"
 serde = { version = "1.0.219", features = ["derive"] }
 spdlog-rs = "0.5.3"
@@ -35,5 +35,5 @@ systemd-units = [ { unit-name = "daily_server", enable = true } ]
 assets = [
     ["target/release/daily_server", "usr/bin/", "755"],
     ["server/*", "opt/daily_server/", "644"],
-    ["server/html/*", "opt/daily_server/html", "644"],
+    ["server/site/*", "opt/daily_server/site", "644"],
 ]
