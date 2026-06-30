@@ -62,6 +62,6 @@ async fn main() -> anyhow::Result<()> {
     let ip = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&ip).await?;
     info!("Server started successfully at {}", ip);
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).await?;
     Ok(())
 }

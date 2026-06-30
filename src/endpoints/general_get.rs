@@ -7,7 +7,7 @@ use crate::util::config::file_in_ignore_list;
 use spdlog::prelude::*;
 
 /// Every URI for a GET request falls under one of these
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum UriValidity {
     Valid(String),
     InIgnoreList,
@@ -26,6 +26,11 @@ fn uri_is_sanitized(uri: &String) -> bool {
     }
 }
 
+/// Returns a slice of everything after the first character
+fn remove_first_char(s: &str) -> String {
+    s.chars().next().map(|c| &s[c.len_utf8()..]).unwrap_or("").to_string()
+}
+
 /// Runs a URI against the ignore list, checks if its safe, checks if it exists, and parses index.html
 fn classify_uri(uri: String) -> UriValidity {
     let mut path = match uri.as_str() {
@@ -36,7 +41,7 @@ fn classify_uri(uri: String) -> UriValidity {
 
     if !uri_is_sanitized(&path) {
         UriValidity::Malicious
-    } else if file_in_ignore_list(Path::new(path.as_str())) {
+    } else if file_in_ignore_list(Path::new(remove_first_char(uri.as_str()).as_str())) {
         UriValidity::InIgnoreList
     } else if !Path::new(path.as_str()).exists() {
         UriValidity::DoesNotExist
@@ -80,5 +85,34 @@ pub async fn endpoint_get(payload: Request<Body>) -> impl IntoResponse {
             error!("Failed to parse GET request '{:?}', {}", payload_debug_string, e);
             Html("internal server error".to_string()).into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use crate::util::config::init_ignore_list;
+    use super::*;
+
+    fn fake_ignore_list() -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(".env\n".as_bytes()).unwrap();
+        file
+    }
+
+    #[tokio::test]
+    async fn test_get_file_lossy() {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all("asd".as_bytes()).unwrap();
+        assert_eq!(get_file_lossy(file.path().to_str().unwrap()).await.as_str(), "asd");
+    }
+
+    #[test]
+    fn test_classify_uri() {
+        init_ignore_list(Path::new(fake_ignore_list().path().to_str().unwrap())).unwrap();
+        assert_eq!(classify_uri("/asd/../../asd".parse().unwrap()), UriValidity::Malicious);
+        assert_eq!(classify_uri("/asdasda/dsasdad/asdasdad/asd".parse().unwrap()), UriValidity::DoesNotExist);
+        assert_eq!(classify_uri("/.env".parse().unwrap()), UriValidity::InIgnoreList);
     }
 }
