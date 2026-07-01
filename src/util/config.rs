@@ -17,6 +17,7 @@ pub struct ServerConfig {
     pub port: u32,
     pub log_filename: String,
     pub ignore_filename: String,
+    pub daily_seed_cache: String,
 }
 
 impl ServerConfig {
@@ -25,6 +26,7 @@ impl ServerConfig {
             port: 3000,
             log_filename: "logs/server.log".to_string(),
             ignore_filename: ".ignore".to_string(),
+            daily_seed_cache: "seed_cache".to_string(),
         }
     }
 

@@ -21,6 +21,8 @@ clap = { version = "4.6.1", features = ["derive"] }
 anyhow = "1.0.102"
 ignore = "0.4.26"
 tempfile = "3.27.0"
+chrono = "0.4.45"
+rand = "0.10.1"
 
 [package.metadata.deb]
 maintainer = "Paolo Mazzon <pdmazzon@gmail.com>"
