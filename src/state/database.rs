@@ -1,11 +1,10 @@
-use serde_json::error::Category::Data;
 use spdlog::prelude::*;
 use tokio::sync::mpsc;
 use rusqlite::{params, Connection, Result};
 use tokio::task::JoinHandle;
 use tokio::time;
 use std::path::Path;
-use std::sync::{Arc, atomic::AtomicBool, atomic::AtomicU64, atomic::Ordering};
+use std::sync::{Arc, atomic::AtomicBool, atomic::AtomicI64, atomic::Ordering};
 use std::time::Duration;
 use anyhow::anyhow;
 use crate::util::graceful_shutdown::{kill_program, kill_signal_received};
@@ -18,10 +17,11 @@ CREATE TABLE IF NOT EXISTS users (
 );";
 
 /// Row in the database
+#[derive(Debug)]
 pub struct DatabaseRow {
-    pub id: u64,
+    pub id: i64,
     pub name: String,
-    pub score: u64,
+    pub score: i64,
 }
 
 impl DatabaseRow {
@@ -65,7 +65,7 @@ pub struct DatabaseAccessor {
     read_sender: mpsc::Sender<Vec<DatabaseRow>>,
 
     /// Global index counter copy copy from the database
-    index_counter: Arc<AtomicU64>,
+    index_counter: Arc<AtomicI64>,
 }
 
 /// Thread-safe database that can only be written to via a ringbuffer
@@ -83,19 +83,39 @@ pub struct Database {
     writer_thread: JoinHandle<()>,
 
     /// Global index counter
-    index_counter: Arc<AtomicU64>,
+    index_counter: Arc<AtomicI64>,
 }
 
 impl Database {
     fn handle_row_write(database: &mut Connection, row: DatabaseRow) {
-        /*if let Err(e) = database.execute("INSERT INTO row (name, score)", row) {
+        if let Err(e) = database.execute("INSERT INTO users (id, name, score) VALUES (?1, ?2, ?3)",
+                                         params![row.id, row.name, row.score]) {
             error!("Failed to write row {:?} to database, {}", row, e);
-        }*/
+        }
     }
 
     fn handle_row_read(database: &mut Connection, read: DatabaseReadRequest) {
-        // TODO: This
-        if let Err(e) = read.return_to.try_send(Vec::new()) {
+        let mut query = match database.prepare(read.query.as_str()) {
+            Ok(q) => q,
+            Err(e) => {
+                error!("Invalid database read requested with query {}", read.query);
+                return
+            }
+        };
+        let result_list: Vec<DatabaseRow> = match query.query_map([], |row| {
+            Ok(DatabaseRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                score: row.get(2)?,
+            })
+        }) {
+            Ok(iter) => iter.map(|x| {x.unwrap_or(DatabaseRow::empty())}).collect(),
+            Err(e) => {
+                error!("Failed to get query results from query {}", read.query);
+                return
+            }
+        };
+        if let Err(e) = read.return_to.try_send(result_list) {
             error!("Failed to send read request back to sender for query '{}'", read.query);
         }
     }
@@ -145,7 +165,7 @@ impl Database {
             kill_thread,
             read_request_sender,
             writer_thread: join_handle,
-            index_counter: Arc::new(AtomicU64::new(0)),
+            index_counter: Arc::new(AtomicI64::new(0)),
         })
     }
 
@@ -206,7 +226,7 @@ impl DatabaseAccessor {
     }
 
     /// Gets a new ID for use in a database row
-    pub fn get_id(&mut self) -> u64 {
+    pub fn get_id(&mut self) -> i64 {
         self.index_counter.fetch_add(1, Ordering::Relaxed)
     }
 }
@@ -228,9 +248,12 @@ mod tests {
     async fn test_read_write_accessor() {
         let db = get_database().await;
         let mut accessor = db.get_accessor().await;
-        accessor.read(String::new(), Duration::from_secs(1)).await.unwrap();
-        accessor.write(DatabaseRow::empty()).await.unwrap();
-        let row = DatabaseRow::new(&mut accessor);
-        accessor.write(row).await.unwrap();
+        let row1 = DatabaseRow::new(&mut accessor);
+        let row2 = DatabaseRow::new(&mut accessor);
+
+        accessor.write(row1).await.unwrap();
+        let rows = accessor.read(String::from("SELECT id, name, score FROM users;"), Duration::from_secs(1)).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        accessor.write(row2).await.unwrap();
     }
 }
