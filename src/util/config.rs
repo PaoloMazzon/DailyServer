@@ -12,12 +12,15 @@ use crate::util::graceful_shutdown::instant_kill_program;
 static IGNORE_LIST: OnceLock<Gitignore> = OnceLock::new();
 
 /// Config that will be loaded at launch
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ServerConfig {
     pub port: u32,
     pub log_filename: String,
     pub ignore_filename: String,
     pub daily_seed_cache: String,
+    pub forbidden_filename: String,
+    pub not_found_filename: String,
+    pub unauthorized_filename: String,
 }
 
 impl ServerConfig {
@@ -27,17 +30,29 @@ impl ServerConfig {
             log_filename: "logs/server.log".to_string(),
             ignore_filename: ".ignore".to_string(),
             daily_seed_cache: "seed_cache".to_string(),
+            forbidden_filename: "forbidden.html".to_string(),
+            not_found_filename: "not_found.html".to_string(),
+            unauthorized_filename: "unauthorized.html".to_string(),
         }
     }
 
     /// Load config from a path or provide defaults if it doesn't exist there
     pub fn load(path: &Path) -> Self {
-        match fs::read(path) {
+        let mut found_config = false;
+        let config = match fs::read(path) {
             Ok(file_vec) => {
+                found_config = true;
                 serde_json::from_slice(&file_vec).unwrap_or(ServerConfig::default_config())
             },
             Err(_) => ServerConfig::default_config()
+        };
+
+        match found_config {
+            true => info!("Found a config at {:?}\n{:#?}", path, config),
+            false => info!("Failed to find a config at {:?}\n{:#?}", path, config),
         }
+
+        config
     }
 }
 

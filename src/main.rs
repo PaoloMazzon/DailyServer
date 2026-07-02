@@ -3,15 +3,17 @@ use axum::{Router, routing::*};
 use spdlog::{sink::RotatingFileSink, sink::StdStreamSink, sink::RotationPolicy, prelude::*};
 use std::path::Path;
 use clap::Parser;
+
 mod endpoints;
 mod util;
 mod state;
 use crate::endpoints::{api, general_get};
+use crate::state::rest_state::RestState;
 use crate::util::config::{ServerConfig, CliConfig, init_ignore_list};
 use crate::util::daily_seed::init_daily_seed_task;
 
-fn setup_logging(config: &ServerConfig) -> anyhow::Result<()> {
-    let log_path = config.log_filename.as_str();
+fn setup_logging(log_filename: String) -> anyhow::Result<()> {
+    let log_path = log_filename.as_str();
     let max_files = 30;
     let policy = RotationPolicy::Daily { hour: 0, minute: 0 };
     let filter_policy = match cfg!(debug_assertions) {
@@ -50,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
     // Load configs and setup logging
     let args = CliConfig::parse();
     let config = ServerConfig::load(Path::new(&args.config_file));
-    setup_logging(&config)?;
+    setup_logging(config.log_filename.clone())?;
     init_ignore_list(Path::new(config.ignore_filename.as_str()))?;
     init_daily_seed_task(&config).await?;
 
@@ -58,7 +60,8 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/{*wildcard}", get(general_get::endpoint_get))
         .route("/", get(general_get::endpoint_get))
-        .route("/api", post(api::api_endpoint_post));
+        .route("/api", post(api::api_endpoint_post))
+        .with_state(RestState::new(config.clone()));
 
     // Start server
     let ip = format!("0.0.0.0:{}", config.port);
@@ -66,4 +69,14 @@ async fn main() -> anyhow::Result<()> {
     info!("Server started successfully at {}", ip);
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::setup_logging;
+
+    #[test]
+    fn test_logger() {
+        setup_logging(String::from("/tmp/asd.log")).unwrap();
+    }
 }
