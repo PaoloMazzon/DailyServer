@@ -251,6 +251,9 @@ mod tests {
             log_filename: String::new(),
             ignore_filename: String::new(),
             daily_seed_cache: cache_dir.to_str().unwrap().to_string(),
+            forbidden_filename: String::new(),
+            not_found_filename: String::new(),
+            unauthorized_filename: String::new(),
         };
 
         init_daily_seed_task(&config).await.unwrap();
