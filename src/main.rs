@@ -51,16 +51,22 @@ fn setup_logging(log_filename: String) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     // Load configs and setup logging
     let args = CliConfig::parse();
+    debug!("Parsed CLI options.");
     let config = ServerConfig::load(Path::new(&args.config_file));
+    debug!("Loaded config.");
     setup_logging(config.log_filename.clone())?;
+    debug!("Setup logging.");
     init_ignore_list(Path::new(config.ignore_filename.as_str()))?;
+    debug!("Created ignore list.");
     init_daily_seed_task(&config).await?;
+    debug!("Initialized daily seed task.");
 
     // Bind endpoints
     let app = Router::new()
+        .route("/api", post(api::api_endpoint_post))
+        .route("/api", get(api::api_endpoint_get))
         .route("/{*wildcard}", get(general_get::endpoint_get))
         .route("/", get(general_get::endpoint_get))
-        .route("/api", post(api::api_endpoint_post))
         .with_state(RestState::new(config.clone()));
 
     // Start server

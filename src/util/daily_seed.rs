@@ -1,4 +1,5 @@
 use std::{fs};
+use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -113,7 +114,9 @@ pub async fn get_current_seed() -> Result<i64, anyhow::Error> {
 
 /// Initialize the daily seed thread
 pub async fn init_daily_seed_task(config: &ServerConfig) -> Result<(), anyhow::Error> {
-    fs::create_dir(Path::new(config.daily_seed_cache.as_str()))?;
+    if let Err(e) = fs::create_dir(Path::new(config.daily_seed_cache.as_str())) && e.kind() != ErrorKind::AlreadyExists {
+        error!("Failed to create seed cache directory '{}', {}", config.daily_seed_cache, e);
+    }
     DAILY_SEED_CACHE.get_or_init(|| Mutex::new(DailySeedCache::new(config.daily_seed_cache.as_str())));
 
     // Tries to make a new seed every hour to force cache to flush

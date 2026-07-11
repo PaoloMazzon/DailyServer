@@ -49,7 +49,7 @@ impl ServerConfig {
 
         match found_config {
             true => info!("Found a config at {:?}\n{:#?}", path, config),
-            false => info!("Failed to find a config at {:?}\n{:#?}", path, config),
+            false => warn!("Failed to find a config at {:?}\n{:#?}", path, config),
         }
 
         config
