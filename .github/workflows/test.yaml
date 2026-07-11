@@ -23,3 +23,7 @@ jobs:
         with:
           path: ${{ env.DEB_FILE }}
           name: .deb file
+      - name: Create container
+        run: |
+              cp ${{ env.DEB_FILE }} ./daily_server.deb
+              docker build -f deploy/Dockerfile -t "daily_server:${{ github.sha }}" .
