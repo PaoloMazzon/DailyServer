@@ -63,7 +63,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Bind endpoints
     let app = Router::new()
+        .route("/api{*wildcard}", post(api::api_endpoint_post))
         .route("/api", post(api::api_endpoint_post))
+        .route("/api{*wildcard}", get(api::api_endpoint_get))
         .route("/api", get(api::api_endpoint_get))
         .route("/{*wildcard}", get(general_get::endpoint_get))
         .route("/", get(general_get::endpoint_get))
