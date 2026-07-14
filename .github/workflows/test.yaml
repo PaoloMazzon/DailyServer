@@ -23,7 +23,7 @@ jobs:
               cargo install cargo-deb
               cargo deb --deb-revision ${{ github.RUN_NUMBER }}
               echo "DEB_FILE=$(find . -name "*.deb")" >> $GITHUB_ENV
-              cp "$DEB_FILE" daily_server.deb
+              cp "$(find . -name "*.deb")" daily_server.deb
       - uses: actions/upload-artifact@v5
         with:
           path: ${{ env.DEB_FILE }}
