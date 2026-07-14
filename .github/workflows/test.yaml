@@ -40,5 +40,5 @@ jobs:
           push: true
           file: deploy/Dockerfile
           tags: |
-            ghcr.io/${{ github.repository_owner }}/myapp:latest
-            ghcr.io/${{ github.repository_owner }}/myapp:${{ github.sha }}
+            ghcr.io/paolomazzon/daily_server:latest
+            ghcr.io/paolomazzon/daily_server:${{ github.sha }}
