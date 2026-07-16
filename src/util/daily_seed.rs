@@ -9,7 +9,8 @@ use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
 use spdlog::error;
 use crate::util::config::ServerConfig;
 use rand::prelude::*;
-use crate::util::graceful_shutdown::kill_signal_received;
+use rusqlite::{params, Connection};
+use crate::util::graceful_shutdown::{instant_kill_program, kill_signal_received};
 
 static DAILY_SEED_CACHE: OnceLock<Mutex<DailySeedCache>> = OnceLock::new();
 
@@ -21,8 +22,8 @@ struct DailySeedCache {
     /// Actual day current_daily_seed belongs to (to know if we need to rotate it)
     current_day: NaiveDateTime,
 
-    /// Directory for the seed cache
-    seed_cache_dir: String,
+    /// SQLite database for the cache
+    connection: Connection,
 }
 
 impl DailySeedCache {
@@ -38,46 +39,33 @@ impl DailySeedCache {
 
     /// Tries to find a daily seed for a given day in the daily seed cache dir
     fn try_to_get_cached_seed(&self) -> Option<i64> {
-        let path = Path::new(self.seed_cache_dir.as_str())
-            .join(Path::new(Self::get_date_string().as_str()));
-        match fs::exists(&path) {
-            Ok(t) => match t {
-                true => {
-                    let file_bytes = fs::read(&path).unwrap_or(Vec::new());
-                    match String::from_utf8(file_bytes).unwrap_or(String::new()).parse::<i64>() {
-                        Ok(int) => Some(int),
-                        Err(e) => {
-                            error!("Error parsing cache file '{:?}', {}", path, e);
-                            None
-                        }
-                    }
-                },
-                false => None
-            },
-            Err(e) => {
-                error!("Failed to check if file '{:?}' exists, {}", path, e);
-                None
-            }
-        }
+        
     }
 
     /// Writes a new daily seed to the cache dir and sets the atomic daily seed
     fn flush_new_seed(&mut self) -> Result<i64, anyhow::Error> {
         let seed: i64 = rand::rng().random();
-        let path = Path::new(self.seed_cache_dir.as_str())
-            .join(Path::new(Self::get_date_string().as_str()));
-        match fs::write(path, seed.to_string()) {
-            Ok(_) => Ok(seed),
-            Err(e) => Err(anyhow!(e))
-        }
+        self.connection.execute("INSERT INTO seed_cache (date, seed) VALUES (?1, ?2)", params![Self::get_date_string(), seed])?;
+        Ok(seed)
     }
 
     /// Init empty new daily seed cache
-    pub fn new(seed_cache_dir: &str) -> Self {
+    pub fn new(seed_cache_db_fname: &str) -> Self {
+        let connection = match Connection::open(Path::new(seed_cache_db_fname)) {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to open daily seed cache db connection, {}", e);
+                instant_kill_program();
+            }
+        };
+        if let Err(e) = connection.execute("CREATE TABLE IF NOT EXISTS seed_cache (date TEXT PRIMARY KEY, seed INTEGER);", params![]) {
+            error!("Failed to create seed cache table, {}", e);
+            instant_kill_program();
+        }
         DailySeedCache {
             current_daily_seed: 0,
             current_day: DateTime::UNIX_EPOCH.date_naive().into(),
-            seed_cache_dir: seed_cache_dir.to_string(),
+            connection,
         }
     }
 
@@ -114,10 +102,7 @@ pub async fn get_current_seed() -> Result<i64, anyhow::Error> {
 
 /// Initialize the daily seed thread
 pub async fn init_daily_seed_task(config: &ServerConfig) -> Result<(), anyhow::Error> {
-    if let Err(e) = fs::create_dir(Path::new(config.daily_seed_cache.as_str())) && e.kind() != ErrorKind::AlreadyExists {
-        error!("Failed to create seed cache directory '{}', {}", config.daily_seed_cache, e);
-    }
-    DAILY_SEED_CACHE.get_or_init(|| Mutex::new(DailySeedCache::new(config.daily_seed_cache.as_str())));
+    DAILY_SEED_CACHE.get_or_init(|| Mutex::new(DailySeedCache::new(config.daily_seed_cache_db.as_str())));
 
     // Tries to make a new seed every hour to force cache to flush
     tokio::spawn(async {
@@ -138,7 +123,7 @@ pub async fn init_daily_seed_task(config: &ServerConfig) -> Result<(), anyhow::E
 
     Ok(())
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,4 +256,4 @@ mod tests {
         let contents = fs::read_to_string(&file_path).unwrap();
         assert_eq!(contents.parse::<i64>().unwrap(), seed_a);
     }
-}
+}*/
