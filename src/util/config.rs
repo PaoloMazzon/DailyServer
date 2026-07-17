@@ -28,10 +28,10 @@ impl ServerConfig {
     fn default_config() -> Self {
         ServerConfig {
             port: 3000,
-            log_filename: "logs/server.log".to_string(),
+            log_filename: "/var/log/daily_server/server.log".to_string(),
             ignore_filename: ".ignore".to_string(),
-            daily_seed_cache_db: "store.db".to_string(),
-            highscore_db: "store.db".to_string(),
+            daily_seed_cache_db: "/var/opt/daily_server/store.db".to_string(),
+            highscore_db: "/var/opt/daily_server/store.db".to_string(),
             forbidden_filename: "forbidden.html".to_string(),
             not_found_filename: "not_found.html".to_string(),
             unauthorized_filename: "unauthorized.html".to_string(),

@@ -1,3 +1,8 @@
 #!/usr/bin/env bash
 
+mkdir -p /var/opt/daily_server/
+chmod 777 /var/opt/daily_server/
+mkdir -p /var/log/daily_server/
+chmod 777 /var/log/daily_server/
+
 #DEBHELPER#
