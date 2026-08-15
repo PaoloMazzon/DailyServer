@@ -1,5 +1,3 @@
-use std::{fs};
-use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -14,16 +12,28 @@ use crate::util::graceful_shutdown::{instant_kill_program, kill_signal_received}
 
 static DAILY_SEED_CACHE: OnceLock<Mutex<DailySeedCache>> = OnceLock::new();
 
+static CREATE_SEED_TABLE_SQL: &str = "
+CREATE TABLE IF NOT EXISTS seed_cache (
+    date TEXT PRIMARY KEY,
+    seed INTEGER);
+";
+
 /// Cache for daily seeds, not internally sync'd since its externally sync'd with a mutex
 struct DailySeedCache {
-    /// Current daily seed, checked each call if its still valid
-    current_daily_seed: i64,
-
-    /// Actual day current_daily_seed belongs to (to know if we need to rotate it)
-    current_day: NaiveDateTime,
+    /// Daily seed
+    current_seed: DailySeed,
 
     /// SQLite database for the cache
     connection: Connection,
+}
+
+/// Just a wrapper for a seed and day, to prevent race conditions
+struct DailySeed {
+    /// Day associated with this seed
+    day: NaiveDateTime,
+
+    /// Actual seed
+    seed: i64
 }
 
 impl DailySeedCache {
@@ -32,20 +42,26 @@ impl DailySeedCache {
         Utc::now().date_naive().into()
     }
 
-    /// Standardized way to get the date as a string
-    fn get_date_string() -> String {
-        Self::get_date().to_string()
+    /// Tries to get the current daily seed from the SQLite database, can fail for a few reasons
+    fn try_to_get_cached_seed(&self, date: &NaiveDateTime) -> Option<DailySeed> {
+        self.connection.query_row("SELECT * FROM seed_cache WHERE date = ?1",
+        params![date.to_string()],
+            |row| {
+                let string: String = row.get(0)?;
+                let datetime = DateTime::parse_from_rfc3339(string.as_str())
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                Ok(DailySeed {
+                    day: datetime.naive_utc(),
+                    seed: row.get(1)?,
+                })
+            }).ok()
     }
 
-    /// Tries to find a daily seed for a given day in the daily seed cache dir
-    fn try_to_get_cached_seed(&self) -> Option<i64> {
-        
-    }
-
-    /// Writes a new daily seed to the cache dir and sets the atomic daily seed
-    fn flush_new_seed(&mut self) -> Result<i64, anyhow::Error> {
+    /// Writes a random daily seed to the SQLite database
+    fn flush_new_seed(&mut self, date: &NaiveDateTime) -> Result<i64, anyhow::Error> {
         let seed: i64 = rand::rng().random();
-        self.connection.execute("INSERT INTO seed_cache (date, seed) VALUES (?1, ?2)", params![Self::get_date_string(), seed])?;
+        self.connection.execute("INSERT INTO seed_cache (date, seed) VALUES (?1, ?2)",
+                                params![date.to_string(), seed])?;
         Ok(seed)
     }
 
@@ -58,33 +74,39 @@ impl DailySeedCache {
                 instant_kill_program();
             }
         };
-        if let Err(e) = connection.execute("CREATE TABLE IF NOT EXISTS seed_cache (date TEXT PRIMARY KEY, seed INTEGER);", params![]) {
+        if let Err(e) = connection.execute(CREATE_SEED_TABLE_SQL, params![]) {
             error!("Failed to create seed cache table, {}", e);
             instant_kill_program();
         }
         DailySeedCache {
-            current_daily_seed: 0,
-            current_day: DateTime::UNIX_EPOCH.date_naive().into(),
+            current_seed: DailySeed {
+                day: DateTime::UNIX_EPOCH.date_naive().into(),
+                seed: 0,
+            },
             connection,
         }
     }
 
-    /// Top-level get the current seed, dw about the details
+    /// Top-level get the current seed
+    /// 1. Check if the current seed matches the current day, return it if it does
+    /// 2. Check if we have the current seed saved (in the event of a crash or something)
+    ///   a) if so, load that seed and set it for the current instance
+    ///   b) if not, create a new daily seed
     pub fn get_daily_seed(&mut self) -> Result<i64, anyhow::Error> {
-        if Self::get_date() == self.current_day {
-            return Ok(self.current_daily_seed)
+        let date = Self::get_date();
+        if date == self.current_seed.day {
+            return Ok(self.current_seed.seed)
         }
 
-        match self.try_to_get_cached_seed() {
+        match self.try_to_get_cached_seed(&date) {
             Some(seed) => {
-                self.current_day = Self::get_date();
-                self.current_daily_seed = seed;
-                Ok(seed)
+                self.current_seed = seed;
+                Ok(self.current_seed.seed)
             },
             None => {
-                let seed = self.flush_new_seed()?;
-                self.current_day = Self::get_date();
-                self.current_daily_seed = seed;
+                let seed = self.flush_new_seed(&date)?;
+                self.current_seed.day = date;
+                self.current_seed.seed = seed;
                 Ok(seed)
             }
         }
@@ -123,137 +145,8 @@ pub async fn init_daily_seed_task(config: &ServerConfig) -> Result<(), anyhow::E
 
     Ok(())
 }
-/*
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tempfile::tempdir;
 
-    fn cache_at(dir: &Path) -> DailySeedCache {
-        DailySeedCache::new(dir.to_str().unwrap())
-    }
-
-    #[test]
-    fn test_new_starts_with_epoch_day_and_zero_seed() {
-        let dir = tempdir().unwrap();
-        let cache = cache_at(dir.path());
-        assert_eq!(cache.current_daily_seed, 0);
-        assert_eq!(cache.current_day, DateTime::UNIX_EPOCH.date_naive().into());
-    }
-
-    #[test]
-    fn test_try_to_get_cached_seed_returns_none_when_missing() {
-        let dir = tempdir().unwrap();
-        let cache = cache_at(dir.path());
-        assert_eq!(cache.try_to_get_cached_seed(), None);
-    }
-
-    #[test]
-    fn test_try_to_get_cached_seed_returns_value_when_present() {
-        let dir = tempdir().unwrap();
-        let cache = cache_at(dir.path());
-        let file_path = dir.path().join(DailySeedCache::get_date_string());
-        fs::write(&file_path, "12345").unwrap();
-        assert_eq!(cache.try_to_get_cached_seed(), Some(12345));
-    }
-
-    #[test]
-    fn test_try_to_get_cached_seed_returns_none_on_corrupt_data() {
-        let dir = tempdir().unwrap();
-        let cache = cache_at(dir.path());
-        let file_path = dir.path().join(DailySeedCache::get_date_string());
-        fs::write(&file_path, "not_a_number").unwrap();
-        assert_eq!(cache.try_to_get_cached_seed(), None);
-    }
-
-    #[test]
-    fn test_flush_new_seed_writes_file_matching_returned_seed() {
-        let dir = tempdir().unwrap();
-        let mut cache = cache_at(dir.path());
-        let seed = cache.flush_new_seed().unwrap();
-
-        let file_path = dir.path().join(DailySeedCache::get_date_string());
-        let contents = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(contents.parse::<i64>().unwrap(), seed);
-    }
-
-    #[test]
-    fn test_flush_new_seed_errors_if_dir_missing() {
-        let mut cache = DailySeedCache::new("/nonexistent/path/that/should/not/exist");
-        assert!(cache.flush_new_seed().is_err());
-    }
-
-    #[test]
-    fn test_get_daily_seed_uses_in_memory_value_for_current_day() {
-        let dir = tempdir().unwrap();
-        let mut cache = cache_at(dir.path());
-        cache.current_day = DailySeedCache::get_date();
-        cache.current_daily_seed = 42;
-        assert_eq!(cache.get_daily_seed().unwrap(), 42);
-    }
-
-    #[test]
-    fn test_get_daily_seed_reads_existing_cache_file() {
-        let dir = tempdir().unwrap();
-        let mut cache = cache_at(dir.path());
-        let file_path = dir.path().join(DailySeedCache::get_date_string());
-        fs::write(&file_path, "777").unwrap();
-
-        let seed = cache.get_daily_seed().unwrap();
-        assert_eq!(seed, 777);
-        assert_eq!(cache.current_day, DailySeedCache::get_date());
-        assert_eq!(cache.current_daily_seed, 777);
-    }
-
-    #[test]
-    fn test_get_daily_seed_generates_new_seed_if_absent() {
-        let dir = tempdir().unwrap();
-        let mut cache = cache_at(dir.path());
-
-        let seed = cache.get_daily_seed().unwrap();
-        assert_eq!(cache.current_daily_seed, seed);
-
-        let file_path = dir.path().join(DailySeedCache::get_date_string());
-        assert!(file_path.exists());
-        let contents = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(contents.parse::<i64>().unwrap(), seed);
-    }
-
-    #[test]
-    fn test_get_daily_seed_is_stable_across_repeated_calls_same_day() {
-        let dir = tempdir().unwrap();
-        let mut cache = cache_at(dir.path());
-
-        let first = cache.get_daily_seed().unwrap();
-        let second = cache.get_daily_seed().unwrap();
-        assert_eq!(first, second);
-    }
-
-    #[tokio::test]
-    async fn test_init_daily_seed_task_and_get_current_seed() {
-        let base = tempdir().unwrap();
-        let cache_dir = base.path().join("seed_cache"); // must not exist yet
-
-        let config = ServerConfig {
-            port: 0,
-            log_filename: String::new(),
-            ignore_filename: String::new(),
-            daily_seed_cache: cache_dir.to_str().unwrap().to_string(),
-            forbidden_filename: String::new(),
-            not_found_filename: String::new(),
-            unauthorized_filename: String::new(),
-        };
-
-        init_daily_seed_task(&config).await.unwrap();
-        assert!(cache_dir.exists());
-
-        let seed_a = get_current_seed().await.unwrap();
-        let seed_b = get_current_seed().await.unwrap();
-        assert_eq!(seed_a, seed_b, "seed should be stable within the same day");
-
-        let file_path = cache_dir.join(DailySeedCache::get_date_string());
-        assert!(file_path.exists());
-        let contents = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(contents.parse::<i64>().unwrap(), seed_a);
-    }
-}*/
+}
