@@ -148,5 +148,28 @@ pub async fn init_daily_seed_task(config: &ServerConfig) -> Result<(), anyhow::E
 
 #[cfg(test)]
 mod tests {
+    use crate::util::graceful_shutdown::kill_program;
+    use tokio::time::sleep;
+    use super::*;
 
+    // Because its a singleton
+    #[tokio::test]
+    async fn full_integration() {
+        let mut server_config = ServerConfig::load(Path::new("/not-real-path"));
+        server_config.daily_seed_cache_db = "/tmp/testing.db".to_string();
+
+        // This bit should trigger the creating a new seed and returning the one stored in a variable
+        {
+            init_daily_seed_task(&server_config).await.unwrap();
+            let _ = get_current_seed();
+            let _ = get_current_seed();
+            kill_program();
+            sleep(Duration::from_millis(100)).await;
+        }
+        // And this should force it to load the variable from cache (db)
+        {
+            init_daily_seed_task(&server_config).await.unwrap();
+            let _ = get_current_seed();
+        }
+    }
 }

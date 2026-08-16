@@ -12,6 +12,7 @@ use crate::util::graceful_shutdown::instant_kill_program;
 static IGNORE_LIST: OnceLock<Gitignore> = OnceLock::new();
 
 /// Config that will be loaded at launch
+#[allow(unused)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct ServerConfig {
     pub port: u32,
