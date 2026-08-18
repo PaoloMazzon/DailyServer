@@ -13,6 +13,7 @@ static TABLE_CREATION_SQL: &str = "
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
+    extra_data TEXT,
     score INTEGER
 );";
 
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
 pub struct DatabaseRow {
     pub id: i64,
     pub name: String,
+    pub extra_data: String, // this is another json
     pub score: i64,
 }
 
@@ -30,6 +32,7 @@ impl DatabaseRow {
         DatabaseRow { 
             id: 0, 
             name: String::new(),
+            extra_data: String::new(),
             score: 0,
         }
     }
@@ -39,6 +42,7 @@ impl DatabaseRow {
         DatabaseRow { 
             id: accessor.get_id(),
             name: String::new(),
+            extra_data: String::new(),
             score: 0,
         }
     }
@@ -66,6 +70,19 @@ pub struct DatabaseAccessor {
 
     /// Global index counter copy copy from the database
     index_counter: Arc<AtomicI64>,
+}
+
+impl Clone for DatabaseAccessor {
+    fn clone(&self) -> Self {
+        let (read_sender, read_receiver) = mpsc::channel(10);
+        DatabaseAccessor {
+            write_request: self.write_request.clone(),
+            read_requester: self.read_requester.clone(),
+            read_receiver,
+            read_sender,
+            index_counter: self.index_counter.clone(),
+        }
+    }
 }
 
 /// Thread-safe database that can only be written to via a ringbuffer
@@ -106,7 +123,8 @@ impl Database {
             Ok(DatabaseRow {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                score: row.get(2)?,
+                extra_data: row.get(2)?,
+                score: row.get(3)?,
             })
         }) {
             Ok(iter) => iter.map(|x| {x.unwrap_or(DatabaseRow::empty())}).collect(),

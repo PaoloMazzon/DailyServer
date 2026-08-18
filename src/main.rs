@@ -8,6 +8,7 @@ mod endpoints;
 mod util;
 mod state;
 use crate::endpoints::{api, general_get};
+use crate::state::database::Database;
 use crate::state::rest_state::RestState;
 use crate::util::config::{ServerConfig, CliConfig, init_ignore_list};
 use crate::util::daily_seed::init_daily_seed_task;
@@ -52,14 +53,21 @@ async fn main() -> anyhow::Result<()> {
     // Load configs and setup logging
     let args = CliConfig::parse();
     debug!("Parsed CLI options.");
+    
     let config = ServerConfig::load(Path::new(&args.config_file));
     debug!("Loaded config.");
+    
     setup_logging(config.log_filename.clone())?;
     debug!("Setup logging.");
+    
     init_ignore_list(Path::new(config.ignore_filename.as_str()))?;
     debug!("Created ignore list.");
+    
     init_daily_seed_task(&config).await?;
     debug!("Initialized daily seed task.");
+    
+    let database = Database::open(config.highscore_db.as_str()).await?;
+    debug!("Initialized database.");
 
     // Bind endpoints
     let app = Router::new()
@@ -69,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api", get(api::api_endpoint_get))
         .route("/{*wildcard}", get(general_get::endpoint_get))
         .route("/", get(general_get::endpoint_get))
-        .with_state(RestState::new(config.clone()));
+        .with_state(RestState { config: config.clone(), accessor: database.get_accessor().await });
 
     // Start server
     let ip = format!("0.0.0.0:{}", config.port);
