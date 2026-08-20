@@ -8,7 +8,8 @@ use std::sync::{Arc, atomic::AtomicBool, atomic::AtomicI64, atomic::Ordering};
 use std::time::Duration;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use crate::util::graceful_shutdown::{kill_program, kill_signal_received};
+use tokio::time::sleep;
+use crate::util::graceful_shutdown::{instant_kill_program, kill_program, kill_signal_received};
 
 static TABLE_CREATION_SQL: &str = "
 CREATE TABLE IF NOT EXISTS users (
@@ -160,12 +161,13 @@ impl Database {
         let spawned_thread_kill_switch = kill_thread.clone();
 
         let join_handle = tokio::spawn(async move {
+            debug!("Starting server thread.");
             if let Err(e) = connection.execute(TABLE_CREATION_SQL, []) {
                 error!("Failed to create dailies table, {}", e);
-                kill_program();
-                panic!();
+                instant_kill_program();
             }
 
+            debug!("User table created, starting database read/write loop.");
             loop {
                 Self::handle_row_writes(&mut connection, &mut write_receiver);
                 Self::handle_row_reads(&mut connection, &mut read_request_receiver);
@@ -176,6 +178,7 @@ impl Database {
                     info!("Database writer thread received kill signal.");
                     break;
                 }
+                sleep(Duration::from_millis(1)).await;
             }
         });
 
