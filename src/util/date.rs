@@ -1,5 +1,6 @@
 use chrono::Utc;
 
+#[allow(unused)]
 pub fn get_date() -> String {
     Utc::now().format("%F").to_string()
 }

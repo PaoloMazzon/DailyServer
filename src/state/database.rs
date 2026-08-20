@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use crate::util::graceful_shutdown::{instant_kill_program, kill_program, kill_signal_received};
+use crate::util::graceful_shutdown::{instant_kill_program, kill_signal_received};
 
 static TABLE_CREATION_SQL: &str = "
 CREATE TABLE IF NOT EXISTS user (

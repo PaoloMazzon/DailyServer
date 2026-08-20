@@ -9,6 +9,7 @@ static KILL_SIGNAL_TIMEOUT: Duration = Duration::from_secs(5);
 /// (it's up to each thread to watch out for the kill signal and handle it
 /// accordingly). This function also spawns a "kill thread" that will nuke
 /// the entire program in 5 seconds.
+#[allow(unused)]
 pub fn kill_program() {
     GLOBAL_KILL_SIGNAL.store(true, Relaxed);
     spawn(async {
