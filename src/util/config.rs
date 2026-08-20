@@ -24,6 +24,7 @@ pub struct ServerConfig {
     pub not_found_filename: String,
     pub unauthorized_filename: String,
     pub database_read_timeout_ms: u64,
+    pub maximum_row_query: i32,
 }
 
 impl ServerConfig {
@@ -38,6 +39,7 @@ impl ServerConfig {
             not_found_filename: "not_found.html".to_string(),
             unauthorized_filename: "unauthorized.html".to_string(),
             database_read_timeout_ms: 2000,
+            maximum_row_query: 100,
         }
     }
 

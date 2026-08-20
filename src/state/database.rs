@@ -12,7 +12,7 @@ use tokio::time::sleep;
 use crate::util::graceful_shutdown::{instant_kill_program, kill_program, kill_signal_received};
 
 static TABLE_CREATION_SQL: &str = "
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS user (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     extra_data TEXT,
@@ -117,7 +117,7 @@ impl Database {
         let mut query = match database.prepare(read.query.as_str()) {
             Ok(q) => q,
             Err(e) => {
-                error!("Invalid database read requested with query {}", read.query);
+                error!("Invalid database read requested with query \"{}\", {}", read.query, e);
                 return
             }
         };
@@ -129,9 +129,9 @@ impl Database {
                 score: row.get(3)?,
             })
         }) {
-            Ok(iter) => iter.map(|x| {x.unwrap_or(DatabaseRow::empty())}).collect(),
+            Ok(iter) => iter.filter_map(|x| x.ok()).collect(),
             Err(e) => {
-                error!("Failed to get query results from query {}", read.query);
+                error!("Failed to get query results from query \"{}\", {}", read.query, e);
                 return
             }
         };

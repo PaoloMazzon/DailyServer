@@ -20,7 +20,6 @@ struct HighscoreQuery {
 #[derive(Serialize, Debug)]
 struct HighscoreResponse {
     actual_starting_index: i32,
-    actual_count: i32,
     scores: Vec<DatabaseRow>,
 }
 
@@ -50,13 +49,20 @@ async fn seed_request() -> Result<Response<Body>, http::Error> {
 }
 
 async fn query_highscore(state: &mut RestState, query: HighscoreQuery) -> Result<Response<Body>, http::Error> {
-    match state.accessor.read("".to_string(), Duration::from_millis(state.config.database_read_timeout_ms)).await {
+    if query.count > state.config.maximum_row_query {
+        return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(format!("{{\"error\": \"maximum amount of rows query-able at once is {}.\"}}", state.config.maximum_row_query).into())?)
+    }
+
+    match state.accessor
+        .read(format!("SELECT * FROM user ORDER BY score DESC LIMIT {} OFFSET {};", query.count, query.starting_index),
+              Duration::from_millis(state.config.database_read_timeout_ms)).await {
         Ok(rows) => {
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(serde_json::to_string(&HighscoreResponse {
                     actual_starting_index: 0, // TODO: This
-                    actual_count: 0, // TODO: This
                     scores: rows
                 }).unwrap_or("{}".to_string()).into())?)
         },
