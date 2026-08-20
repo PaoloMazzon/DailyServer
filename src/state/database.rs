@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, atomic::AtomicBool, atomic::AtomicI64, atomic::Ordering};
 use std::time::Duration;
 use anyhow::anyhow;
+use serde::{Deserialize, Serialize};
 use crate::util::graceful_shutdown::{kill_program, kill_signal_received};
 
 static TABLE_CREATION_SQL: &str = "
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 );";
 
 /// Row in the database
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DatabaseRow {
     pub id: i64,
     pub name: String,

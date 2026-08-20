@@ -5,3 +5,5 @@ filename
 *.deb
 .ignore
 server/logs/
+.idea/
+server/seed_cache/

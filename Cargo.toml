@@ -23,6 +23,7 @@ ignore = "0.4.26"
 tempfile = "3.27.0"
 chrono = "0.4.45"
 rand = "0.10.1"
+serde_urlencoded = "0.7.1"
 
 [package.metadata.deb]
 maintainer = "Paolo Mazzon <pdmazzon@gmail.com>"

@@ -23,6 +23,7 @@ pub struct ServerConfig {
     pub forbidden_filename: String,
     pub not_found_filename: String,
     pub unauthorized_filename: String,
+    pub database_read_timeout_ms: u64,
 }
 
 impl ServerConfig {
@@ -36,6 +37,7 @@ impl ServerConfig {
             forbidden_filename: "forbidden.html".to_string(),
             not_found_filename: "not_found.html".to_string(),
             unauthorized_filename: "unauthorized.html".to_string(),
+            database_read_timeout_ms: 2000,
         }
     }
 
