@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS user (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     extra_data TEXT,
-    score INTEGER
+    score INTEGER NOT NULL,
+    date TEXT NOT NULL
 );";
 
 /// Row in the database
@@ -26,6 +27,7 @@ pub struct DatabaseRow {
     pub name: String,
     pub extra_data: String, // this is another json
     pub score: i64,
+    pub date: String, // iso 8601
 }
 
 impl DatabaseRow {
@@ -36,6 +38,7 @@ impl DatabaseRow {
             name: String::new(),
             extra_data: String::new(),
             score: 0,
+            date: String::new(),
         }
     }
 
@@ -46,6 +49,7 @@ impl DatabaseRow {
             name: String::new(),
             extra_data: String::new(),
             score: 0,
+            date: String::new(),
         }
     }
 }
@@ -125,8 +129,9 @@ impl Database {
             Ok(DatabaseRow {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                extra_data: row.get(2)?,
+                extra_data: row.get(2).unwrap_or("{}".to_string()),
                 score: row.get(3)?,
+                date: row.get(4)?,
             })
         }) {
             Ok(iter) => iter.filter_map(|x| x.ok()).collect(),

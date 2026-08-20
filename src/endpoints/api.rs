@@ -10,16 +10,17 @@ use crate::state::rest_state::RestState;
 use crate::util::daily_seed::get_current_seed;
 use spdlog::prelude::*;
 use crate::state::database::DatabaseRow;
+use crate::util::date::is_date_iso8601;
 
 #[derive(Deserialize, Debug)]
 struct HighscoreQuery {
     starting_index: i32,
     count: i32,
+    date: String,
 }
 
 #[derive(Serialize, Debug)]
 struct HighscoreResponse {
-    actual_starting_index: i32,
     scores: Vec<DatabaseRow>,
 }
 
@@ -28,7 +29,8 @@ pub async fn api_endpoint_post(_state: State<RestState>, payload: Request<Body>)
         "status": "ok",
         "uri": payload.uri().to_string()
     });
-    todo!("Parse different URIs and post a highscore, returning the ID of that highscore");
+    // TODO: Parse different URIs and post a highscore, returning the ID of that highscore
+    // This should also make sure the seed is still valid before posting it to the database
     Json(json_response)
 }
 
@@ -55,14 +57,19 @@ async fn query_highscore(state: &mut RestState, query: HighscoreQuery) -> Result
                 .body(format!("{{\"error\": \"maximum amount of rows query-able at once is {}.\"}}", state.config.maximum_row_query).into())?)
     }
 
+    if !is_date_iso8601(query.date.clone()) {
+        return Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(format!("{{\"error\": \"Invalid date format, must be ISO-8601 formatted.\"}}").into())?)
+    }
+
     match state.accessor
-        .read(format!("SELECT * FROM user ORDER BY score DESC LIMIT {} OFFSET {};", query.count, query.starting_index),
+        .read(format!("SELECT * FROM user WHERE date == \"{}\" ORDER BY score DESC LIMIT {} OFFSET {};", query.date, query.count, query.starting_index),
               Duration::from_millis(state.config.database_read_timeout_ms)).await {
         Ok(rows) => {
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(serde_json::to_string(&HighscoreResponse {
-                    actual_starting_index: 0, // TODO: This
                     scores: rows
                 }).unwrap_or("{}".to_string()).into())?)
         },
@@ -90,7 +97,7 @@ pub async fn api_endpoint_get(mut state: State<RestState>, payload: Request<Body
                     debug!("Bad get request, URI={:?}, e={}", payload.uri(), e);
                     Response::builder()
                         .status(StatusCode::BAD_REQUEST)
-                        .body(format!("{}", e).into())
+                        .body(format!("{{\"error\": \"{}\"}}", e).into())
                         .unwrap_or(Html("internal server error".to_string()).into_response())
                 }
             }
