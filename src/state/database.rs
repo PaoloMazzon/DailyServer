@@ -10,7 +10,6 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, timeout};
 use crate::util::config::ServerConfig;
-use crate::util::date::get_date;
 use crate::util::graceful_shutdown::{instant_kill_program, kill_signal_received};
 
 static TABLE_CREATION_SQL: &str = "
@@ -23,7 +22,7 @@ CREATE TABLE IF NOT EXISTS user (
 );";
 
 /// Row in the database
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DatabaseRow {
     pub id: i64,
     pub name: String,
@@ -62,7 +61,7 @@ struct DatabaseReadRequest {
     pub return_to: mpsc::Sender<Vec<DatabaseRow>>,
 }
 
-struct DatabaseWriteRequest {
+pub struct DatabaseWriteRequest {
     pub row: DatabaseRow,
     pub id_return: Option<mpsc::Sender<i64>>,
 }
@@ -127,8 +126,8 @@ pub struct Database {
 
 impl Database {
     fn handle_row_write(database: &mut Connection, row: DatabaseRow) {
-        if let Err(e) = database.execute("INSERT INTO user (id, name, extra_data, score, date) VALUES (?1, ?2, ?3, ?4, ?5)",
-                                         params![row.id, row.name, row.extra_data, row.score, row.date]) {
+        if let Err(e) = database.execute("INSERT INTO user (name, extra_data, score, date) VALUES (?1, ?2, ?3, ?4)",
+                                         params![row.name, row.extra_data, row.score, row.date]) {
             error!("Failed to write row {:?} to database, {}", row, e);
         }
     }
@@ -166,7 +165,7 @@ impl Database {
             Database::handle_row_write(connection, row.row);
             if let Some(id_sender) = row.id_return {
                 let row_id = connection.last_insert_rowid();
-                if let Err(e) = id_sender.blocking_send(row_id) {
+                if let Err(e) = id_sender.try_send(row_id) {
                     spdlog::error!("Failed to send most recent row id {}, {}", row_id, e);
                 }
             }
@@ -253,14 +252,14 @@ impl Drop for Database {
 }
 
 impl DatabaseAccessor {
-    /// Tries to write a row, will autofill the date column, can fail
+    /// Tries to write a row, can fail
     pub async fn write(&self, row: DatabaseRow) -> Result<(), mpsc::error::SendError<DatabaseWriteRequest>> {
         let send_row = DatabaseRow {
             id: row.id,
             name: row.name,
             extra_data: row.extra_data,
             score: row.score,
-            date: get_date(),
+            date: row.date,
         };
         let write_request = DatabaseWriteRequest {
             row: send_row,
@@ -275,7 +274,7 @@ impl DatabaseAccessor {
             name: row.name,
             extra_data: row.extra_data,
             score: row.score,
-            date: get_date(),
+            date: row.date,
         };
         let write_request = DatabaseWriteRequest {
             row: send_row,

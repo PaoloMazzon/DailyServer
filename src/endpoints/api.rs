@@ -34,8 +34,7 @@ struct SubmitRequest {
 
 #[derive(Serialize, Debug)]
 struct SubmitResponse {
-    successful: bool,
-    submitted_id: Option<i64>,
+    submitted_id: i64,
 }
 
 async fn v1_submit_request(state: &mut RestState, paylod: Request<Body>) -> Result<Response<Body>, http::Error> {
@@ -54,7 +53,7 @@ async fn v1_submit_request(state: &mut RestState, paylod: Request<Body>) -> Resu
     };
 
     if submission.daily_seed != get_current_seed().await.unwrap_or(0) {
-        return Ok(general_error_response(StatusCode::CONFLICT, format!("Daily seed is out of date.")))
+        return Ok(general_error_response(StatusCode::CONFLICT, "Daily seed is out of date.".to_string()))
     }
 
     let row = DatabaseRow {
@@ -65,7 +64,24 @@ async fn v1_submit_request(state: &mut RestState, paylod: Request<Body>) -> Resu
         date: get_date(),
     };
 
-    todo!("Actual write request and return ID if successful");
+    match state.accessor.write_with_id(&state.config, row.clone()).await {
+        Ok(id) => {
+            let response = SubmitResponse { submitted_id: id };
+            match serde_json::to_value(&response) {
+                Ok(json) => {
+                    info!("Submitted score {:?}, response {:?}.", row, json);
+                    Ok((StatusCode::OK, Json(json)).into_response())
+                },
+                Err(e) => {
+                    warn!("Failed to serialize json for struct {:?}, {}", response, e);
+                    Ok(general_error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+                }
+            }
+        },
+        Err(e) => {
+            Ok(general_error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        }
+    }
 }
 
 pub async fn api_endpoint_post(mut state: State<RestState>, payload: Request<Body>) -> impl IntoResponse {
@@ -103,7 +119,14 @@ async fn query_highscore(state: &mut RestState, query: HighscoreQuery) -> Result
         .read(format!("SELECT * FROM user WHERE date == \"{}\" ORDER BY score DESC LIMIT {} OFFSET {};", query.date, query.count, query.starting_index),
               Duration::from_millis(state.config.database_read_timeout_ms)).await {
         Ok(rows) => {
-            Ok((StatusCode::OK, Json(json!({"scores": rows}))).into_response())
+            let response = HighscoreResponse { scores: rows };
+            match serde_json::to_value(&response) {
+                Ok(json) => Ok((StatusCode::OK, Json(json)).into_response()),
+                Err(e) => {
+                    warn!("Failed to serialize struct {:?}, {}", response, e);
+                    Ok(general_error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+                }
+            }
         },
         Err(e) => {
             debug!("Highscore query \"{:?}\" failed, {}", query, e);

@@ -2,12 +2,13 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
 use anyhow::anyhow;
+use chrono::{Timelike, Utc};
 use tokio::sync::Mutex;
-use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
 use spdlog::error;
 use crate::util::config::ServerConfig;
 use rand::prelude::*;
 use rusqlite::{params, Connection};
+use crate::util::date::{get_date, get_date_epoch};
 use crate::util::graceful_shutdown::{instant_kill_program, kill_signal_received};
 
 static DAILY_SEED_CACHE: OnceLock<Mutex<DailySeedCache>> = OnceLock::new();
@@ -30,35 +31,27 @@ struct DailySeedCache {
 /// Just a wrapper for a seed and day, to prevent race conditions
 struct DailySeed {
     /// Day associated with this seed
-    day: NaiveDateTime,
+    day: String,
 
     /// Actual seed
     seed: i64
 }
 
 impl DailySeedCache {
-    /// Standardized way to get date
-    fn get_date() -> NaiveDateTime {
-        Utc::now().date_naive().into()
-    }
-
     /// Tries to get the current daily seed from the SQLite database, can fail for a few reasons
-    fn try_to_get_cached_seed(&self, date: &NaiveDateTime) -> Option<DailySeed> {
+    fn try_to_get_cached_seed(&self, date: String) -> Option<DailySeed> {
         self.connection.query_row("SELECT * FROM seed_cache WHERE date = ?1",
-        params![date.to_string()],
+        params![date],
             |row| {
-                let string: String = row.get(0)?;
-                let datetime = DateTime::parse_from_rfc3339(string.as_str())
-                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
                 Ok(DailySeed {
-                    day: datetime.naive_utc(),
+                    day: row.get(0)?,
                     seed: row.get(1)?,
                 })
             }).ok()
     }
 
     /// Writes a random daily seed to the SQLite database
-    fn flush_new_seed(&mut self, date: &NaiveDateTime) -> Result<i64, anyhow::Error> {
+    fn flush_new_seed(&mut self, date: String) -> Result<i64, anyhow::Error> {
         let seed: i64 = rand::rng().random();
         self.connection.execute("INSERT INTO seed_cache (date, seed) VALUES (?1, ?2)",
                                 params![date.to_string(), seed])?;
@@ -80,7 +73,7 @@ impl DailySeedCache {
         }
         DailySeedCache {
             current_seed: DailySeed {
-                day: DateTime::UNIX_EPOCH.date_naive().into(),
+                day: get_date_epoch(),
                 seed: 0,
             },
             connection,
@@ -93,18 +86,18 @@ impl DailySeedCache {
     ///   a) if so, load that seed and set it for the current instance
     ///   b) if not, create a new daily seed
     pub fn get_daily_seed(&mut self) -> Result<i64, anyhow::Error> {
-        let date = Self::get_date();
+        let date = get_date();
         if date == self.current_seed.day {
             return Ok(self.current_seed.seed)
         }
 
-        match self.try_to_get_cached_seed(&date) {
+        match self.try_to_get_cached_seed(date.clone()) {
             Some(seed) => {
                 self.current_seed = seed;
                 Ok(self.current_seed.seed)
             },
             None => {
-                let seed = self.flush_new_seed(&date)?;
+                let seed = self.flush_new_seed(date.clone())?;
                 self.current_seed.day = date;
                 self.current_seed.seed = seed;
                 Ok(seed)

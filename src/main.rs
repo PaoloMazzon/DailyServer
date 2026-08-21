@@ -52,6 +52,8 @@ fn setup_logging(log_filename: String) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    info!("Starting daily server version v{}.{}", env!("CARGO_PKG_VERSION"), option_env!("GITHUB_RUN_NUMBER").unwrap_or("dev"));
+
     // Load configs and setup logging
     let args = CliConfig::parse();
     debug!("Parsed CLI options.");

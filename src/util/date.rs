@@ -1,9 +1,13 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
-#[allow(unused)]
 pub fn get_date() -> String {
     Utc::now().format("%F").to_string()
 }
+
+pub fn get_date_epoch() -> String {
+    DateTime::UNIX_EPOCH.naive_utc().format("%F").to_string()
+}
+
 
 pub fn is_date_iso8601(date: String) -> bool {
     let vec_date = date.into_bytes();
@@ -37,5 +41,10 @@ mod tests {
     #[test]
     fn make_sure_valid() {
         assert!(is_date_iso8601(get_date()));
+    }
+
+    #[test]
+    fn make_sure_epoch_valid() {
+        assert!(is_date_iso8601(get_date_epoch()));
     }
 }
