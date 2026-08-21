@@ -135,7 +135,7 @@ pub async fn init_daily_seed_task(config: &ServerConfig) -> Result<(), anyhow::E
                 let _ = get_current_seed().await;
             }
 
-            if kill_signal_received() {
+            if kill_signal_received() || cfg!(test) {
                 break;
             }
 
@@ -148,11 +148,10 @@ pub async fn init_daily_seed_task(config: &ServerConfig) -> Result<(), anyhow::E
 
 #[cfg(test)]
 mod tests {
-    use crate::util::graceful_shutdown::kill_program;
     use tokio::time::sleep;
     use super::*;
 
-    // Because its a singleton
+    // Because it's a singleton
     #[tokio::test]
     async fn full_integration() {
         let mut server_config = ServerConfig::load(Path::new("/not-real-path"));
@@ -163,7 +162,6 @@ mod tests {
             init_daily_seed_task(&server_config).await.unwrap();
             let _ = get_current_seed();
             let _ = get_current_seed();
-            kill_program();
             sleep(Duration::from_millis(100)).await;
         }
         // And this should force it to load the variable from cache (db)

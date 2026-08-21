@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
+use crate::util::date::get_date;
 use crate::util::graceful_shutdown::{instant_kill_program, kill_signal_received};
 
 static TABLE_CREATION_SQL: &str = "
@@ -111,8 +112,8 @@ pub struct Database {
 
 impl Database {
     fn handle_row_write(database: &mut Connection, row: DatabaseRow) {
-        if let Err(e) = database.execute("INSERT INTO users (id, name, score) VALUES (?1, ?2, ?3)",
-                                         params![row.id, row.name, row.score]) {
+        if let Err(e) = database.execute("INSERT INTO user (id, name, extra_data, score, date) VALUES (?1, ?2, ?3, ?4, ?5)",
+                                         params![row.id, row.name, row.extra_data, row.score, row.date]) {
             error!("Failed to write row {:?} to database, {}", row, e);
         }
     }
@@ -228,9 +229,16 @@ impl Drop for Database {
 }
 
 impl DatabaseAccessor {
-    /// Tries to write a row, can fail
+    /// Tries to write a row, will autofill the date column, can fail
     pub async fn write(&self, row: DatabaseRow) -> Result<(), mpsc::error::SendError<DatabaseRow>> {
-        self.write_request.send(row).await
+        let send_row = DatabaseRow {
+            id: row.id,
+            name: row.name,
+            extra_data: row.extra_data,
+            score: row.score,
+            date: get_date(),
+        };
+        self.write_request.send(send_row).await
     }
 
     /// Tries to read from a query, can fail
@@ -279,7 +287,8 @@ mod tests {
         let row2 = DatabaseRow::new(&mut accessor);
 
         accessor.write(row1).await.unwrap();
-        let rows = accessor.read(String::from("SELECT id, name, score FROM users;"), Duration::from_secs(1)).await.unwrap();
+        sleep(Duration::from_millis(100)).await ;
+        let rows = accessor.read(String::from("SELECT *, score FROM user;"), Duration::from_secs(1)).await.unwrap();
         assert_eq!(rows.len(), 1);
         accessor.write(row2).await.unwrap();
     }

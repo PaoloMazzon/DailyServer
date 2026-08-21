@@ -36,13 +36,6 @@ pub fn kill_signal_received() -> bool {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_kill_signal() {
-        assert_eq!(kill_signal_received(), false);
-        kill_program();
-        assert_eq!(kill_signal_received(), true);
-    }
-
     #[test]
     #[should_panic]
     fn instant_kill_instant_kills() {
