@@ -10,7 +10,7 @@ use crate::util::daily_seed::get_current_seed;
 use spdlog::prelude::*;
 use crate::endpoints::util::{general_error_response, internal_error_response, not_found_response};
 use crate::state::database::DatabaseRow;
-use crate::util::date::is_date_iso8601;
+use crate::util::date::{get_date, is_date_iso8601};
 
 #[derive(Deserialize, Debug)]
 struct HighscoreQuery {
@@ -52,8 +52,20 @@ async fn v1_submit_request(state: &mut RestState, paylod: Request<Body>) -> Resu
         Ok(s) => s,
         Err(e) => return Ok(general_error_response(StatusCode::BAD_REQUEST, format!("{}", e)))
     };
-    
-    todo!("The database write using the now safely processed submission.");
+
+    if submission.daily_seed != get_current_seed().await.unwrap_or(0) {
+        return Ok(general_error_response(StatusCode::CONFLICT, format!("Daily seed is out of date.")))
+    }
+
+    let row = DatabaseRow {
+        id: 0,
+        name: submission.name,
+        extra_data: submission.extra_data,
+        score: submission.score,
+        date: get_date(),
+    };
+
+    todo!("Actual write request and return ID if successful");
 }
 
 pub async fn api_endpoint_post(mut state: State<RestState>, payload: Request<Body>) -> impl IntoResponse {

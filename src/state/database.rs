@@ -8,7 +8,8 @@ use std::sync::{Arc, atomic::AtomicBool, atomic::AtomicI64, atomic::Ordering};
 use std::time::Duration;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
+use crate::util::config::ServerConfig;
 use crate::util::date::get_date;
 use crate::util::graceful_shutdown::{instant_kill_program, kill_signal_received};
 
@@ -56,15 +57,26 @@ impl DatabaseRow {
 }
 
 /// A read-request is a query into the db and a sender so the db thread can reply
-pub struct DatabaseReadRequest {
+struct DatabaseReadRequest {
     pub query: String,
     pub return_to: mpsc::Sender<Vec<DatabaseRow>>,
+}
+
+struct DatabaseWriteRequest {
+    pub row: DatabaseRow,
+    pub id_return: Option<mpsc::Sender<i64>>,
 }
 
 /// A way to read and write to a database in a thread-safe manner
 pub struct DatabaseAccessor {
     /// Used to send write requests to the database
-    write_request: mpsc::Sender<DatabaseRow>,
+    write_request: mpsc::Sender<DatabaseWriteRequest>,
+
+    /// For receiving IDs from database thread
+    id_receiver: mpsc::Receiver<i64>,
+
+    /// For sending ids from the database thread (gets cloned out)
+    id_sender: mpsc::Sender<i64>,
 
     /// Used to send read requests to the database thread
     read_requester: mpsc::Sender<DatabaseReadRequest>,
@@ -82,9 +94,12 @@ pub struct DatabaseAccessor {
 impl Clone for DatabaseAccessor {
     fn clone(&self) -> Self {
         let (read_sender, read_receiver) = mpsc::channel(10);
+        let (id_sender, id_receiver) = mpsc::channel(10);
         DatabaseAccessor {
             write_request: self.write_request.clone(),
             read_requester: self.read_requester.clone(),
+            id_sender,
+            id_receiver,
             read_receiver,
             read_sender,
             index_counter: self.index_counter.clone(),
@@ -95,7 +110,7 @@ impl Clone for DatabaseAccessor {
 /// Thread-safe database that can only be written to via a ringbuffer
 pub struct Database {
     /// Provided to accessors to send writes to the DB
-    write_sender: mpsc::Sender<DatabaseRow>,
+    write_sender: mpsc::Sender<DatabaseWriteRequest>,
 
     /// Copied for database accessors
     read_request_sender: mpsc::Sender<DatabaseReadRequest>,
@@ -146,9 +161,15 @@ impl Database {
         }
     }
 
-    fn handle_row_writes(connection: &mut Connection, write_receiver: &mut mpsc::Receiver<DatabaseRow>) {
+    fn handle_row_writes(connection: &mut Connection, write_receiver: &mut mpsc::Receiver<DatabaseWriteRequest>) {
         while let Ok(row) = write_receiver.try_recv() {
-            Database::handle_row_write(connection, row);
+            Database::handle_row_write(connection, row.row);
+            if let Some(id_sender) = row.id_return {
+                let row_id = connection.last_insert_rowid();
+                if let Err(e) = id_sender.blocking_send(row_id) {
+                    spdlog::error!("Failed to send most recent row id {}, {}", row_id, e);
+                }
+            }
         }
     }
 
@@ -199,9 +220,12 @@ impl Database {
 
     pub async fn get_accessor(&self) -> DatabaseAccessor {
         let (read_sender, read_receiver) = mpsc::channel(10);
+        let (id_sender, id_receiver) = mpsc::channel(10);
         DatabaseAccessor {
             write_request: self.write_sender.clone(),
             read_requester: self.read_request_sender.clone(),
+            id_sender,
+            id_receiver,
             read_receiver,
             read_sender,
             index_counter: self.index_counter.clone(),
@@ -230,7 +254,7 @@ impl Drop for Database {
 
 impl DatabaseAccessor {
     /// Tries to write a row, will autofill the date column, can fail
-    pub async fn write(&self, row: DatabaseRow) -> Result<(), mpsc::error::SendError<DatabaseRow>> {
+    pub async fn write(&self, row: DatabaseRow) -> Result<(), mpsc::error::SendError<DatabaseWriteRequest>> {
         let send_row = DatabaseRow {
             id: row.id,
             name: row.name,
@@ -238,7 +262,36 @@ impl DatabaseAccessor {
             score: row.score,
             date: get_date(),
         };
-        self.write_request.send(send_row).await
+        let write_request = DatabaseWriteRequest {
+            row: send_row,
+            id_return: None
+        };
+        self.write_request.send(write_request).await
+    }
+
+    pub async fn write_with_id(&mut self, config: &ServerConfig, row: DatabaseRow) -> Result<i64, anyhow::Error> {
+        let send_row = DatabaseRow {
+            id: row.id,
+            name: row.name,
+            extra_data: row.extra_data,
+            score: row.score,
+            date: get_date(),
+        };
+        let write_request = DatabaseWriteRequest {
+            row: send_row,
+            id_return: Some(self.id_sender.clone()),
+        };
+        self.write_request.send(write_request).await?;
+
+        match timeout(Duration::from_millis(config.database_read_timeout_ms), self.id_receiver.recv()).await? {
+            Some(id) => {
+                Ok(id)
+            },
+            None => {
+                error!("Failed to get id from database write");
+                Err(anyhow!("No ID from database!"))
+            }
+        }
     }
 
     /// Tries to read from a query, can fail
