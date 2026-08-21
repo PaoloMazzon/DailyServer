@@ -25,6 +25,7 @@ pub struct ServerConfig {
     pub unauthorized_filename: String,
     pub database_read_timeout_ms: u64,
     pub maximum_row_query: i32,
+    pub request_max_payload_size: usize,
 }
 
 impl ServerConfig {
@@ -40,6 +41,7 @@ impl ServerConfig {
             unauthorized_filename: "unauthorized.html".to_string(),
             database_read_timeout_ms: 2000,
             maximum_row_query: 100,
+            request_max_payload_size: 1024 * 1024,
         }
     }
 

@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::sync::Arc;
 use axum::{Router, routing::*};
 use spdlog::{sink::RotatingFileSink, sink::StdStreamSink, sink::RotationPolicy, prelude::*};
