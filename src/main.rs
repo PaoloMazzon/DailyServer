@@ -1,9 +1,11 @@
 extern crate core;
 
-use std::sync::Arc;
+use std::sync::{Arc};
 use axum::{Router, routing::*};
 use spdlog::{sink::RotatingFileSink, sink::StdStreamSink, sink::RotationPolicy, prelude::*};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use clap::Parser;
 
 mod endpoints;
@@ -14,6 +16,7 @@ use crate::state::database::Database;
 use crate::state::rest_state::RestState;
 use crate::util::config::{ServerConfig, CliConfig, init_ignore_list};
 use crate::util::daily_seed::init_daily_seed_task;
+use crate::util::graceful_shutdown::kill_program;
 
 fn setup_logging(log_filename: String) -> anyhow::Result<()> {
     let log_path = log_filename.as_str();
@@ -54,6 +57,25 @@ fn setup_logging(log_filename: String) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     info!("Starting daily server version v{}.{}", env!("CARGO_PKG_VERSION"), option_env!("GITHUB_RUN_NUMBER").unwrap_or("dev"));
 
+    // Setup ctrl+c functionality
+    let ctrl_c_kill_signal = Arc::new(AtomicBool::new(false));
+    let listener_kill_signal = ctrl_c_kill_signal.clone();
+    let server_kill = ctrl_c_kill_signal.clone();
+    ctrlc::set_handler(move || {
+        ctrl_c_kill_signal.store(true, Ordering::Relaxed);
+    })?;
+    tokio::task::spawn(async move {
+        while !listener_kill_signal.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        kill_program();
+    });
+    let server_shutdown_future = async move {
+        while !server_kill.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+
     // Load configs and setup logging
     let args = CliConfig::parse();
     debug!("Parsed CLI options.");
@@ -87,7 +109,9 @@ async fn main() -> anyhow::Result<()> {
     let ip = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&ip).await?;
     info!("Server started successfully at {}", ip);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(server_shutdown_future)
+        .await?;
     Ok(())
 }
 
